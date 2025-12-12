@@ -1,0 +1,14 @@
+# PyTorch dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+
+# TensorFlow dependencies
+tensorflow>=2.13.0
+
+# Common dependencies
+numpy>=1.24.0
+pillow>=10.0.0
+matplotlib>=3.7.0
+
+# Optional but recommended
+tqdm>=4.65.0

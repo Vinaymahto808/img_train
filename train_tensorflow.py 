@@ -1,0 +1,166 @@
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+import os
+
+def create_data_generators(train_dir='data/train', val_dir='data/val', batch_size=32):
+    """Create training and validation data generators"""
+    
+    # Training data with augmentation
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        rotation_range=20,
+        width_shift_range=0.2,
+        height_shift_range=0.2,
+        horizontal_flip=True,
+        zoom_range=0.2,
+        fill_mode='nearest'
+    )
+    
+    # Validation data (only rescaling)
+    val_datagen = ImageDataGenerator(rescale=1./255)
+    
+    # Create generators
+    train_generator = train_datagen.flow_from_directory(
+        train_dir,
+        target_size=(224, 224),
+        batch_size=batch_size,
+        class_mode='categorical',
+        shuffle=True
+    )
+    
+    val_generator = val_datagen.flow_from_directory(
+        val_dir,
+        target_size=(224, 224),
+        batch_size=batch_size,
+        class_mode='categorical',
+        shuffle=False
+    )
+    
+    return train_generator, val_generator
+
+def create_model(num_classes, use_pretrained=True):
+    """Create model using transfer learning with ResNet50"""
+    
+    if use_pretrained:
+        # Load pre-trained ResNet50
+        base_model = ResNet50(
+            weights='imagenet',
+            include_top=False,
+            input_shape=(224, 224, 3)
+        )
+        
+        # Freeze base model layers
+        base_model.trainable = False
+        
+        # Create new model
+        model = keras.Sequential([
+            base_model,
+            layers.GlobalAveragePooling2D(),
+            layers.Dense(512, activation='relu'),
+            layers.Dropout(0.5),
+            layers.Dense(num_classes, activation='softmax')
+        ])
+    else:
+        # Simple CNN from scratch
+        model = keras.Sequential([
+            layers.Conv2D(32, (3, 3), activation='relu', input_shape=(224, 224, 3)),
+            layers.MaxPooling2D((2, 2)),
+            layers.Conv2D(64, (3, 3), activation='relu'),
+            layers.MaxPooling2D((2, 2)),
+            layers.Conv2D(128, (3, 3), activation='relu'),
+            layers.MaxPooling2D((2, 2)),
+            layers.Flatten(),
+            layers.Dense(512, activation='relu'),
+            layers.Dropout(0.5),
+            layers.Dense(num_classes, activation='softmax')
+        ])
+    
+    return model
+
+def main():
+    # Hyperparameters
+    NUM_EPOCHS = 10
+    BATCH_SIZE = 32
+    LEARNING_RATE = 0.001
+    
+    # Check for GPU
+    print('TensorFlow version:', tf.__version__)
+    print('GPU Available:', tf.config.list_physical_devices('GPU'))
+    
+    # Create data generators
+    print('\nLoading data...')
+    train_generator, val_generator = create_data_generators(batch_size=BATCH_SIZE)
+    
+    print(f'Classes: {list(train_generator.class_indices.keys())}')
+    print(f'Training samples: {train_generator.samples}')
+    print(f'Validation samples: {val_generator.samples}')
+    
+    # Create model
+    print('\nCreating model...')
+    num_classes = train_generator.num_classes
+    model = create_model(num_classes, use_pretrained=True)
+    
+    # Compile model
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=LEARNING_RATE),
+        loss='categorical_crossentropy',
+        metrics=['accuracy']
+    )
+    
+    # Print model summary
+    print('\nModel architecture:')
+    model.summary()
+    
+    # Callbacks
+    callbacks = [
+        ModelCheckpoint(
+            'best_model_tensorflow.h5',
+            monitor='val_accuracy',
+            save_best_only=True,
+            mode='max',
+            verbose=1
+        ),
+        EarlyStopping(
+            monitor='val_loss',
+            patience=5,
+            restore_best_weights=True,
+            verbose=1
+        )
+    ]
+    
+    # Train model
+    print('\nStarting training...')
+    history = model.fit(
+        train_generator,
+        epochs=NUM_EPOCHS,
+        validation_data=val_generator,
+        callbacks=callbacks,
+        verbose=1
+    )
+    
+    # Evaluate on validation set
+    print('\nEvaluating model...')
+    val_loss, val_accuracy = model.evaluate(val_generator)
+    print(f'Final Validation Loss: {val_loss:.4f}')
+    print(f'Final Validation Accuracy: {val_accuracy * 100:.2f}%')
+    
+    # Save final model
+    model.save('final_model_tensorflow.h5')
+    print('\nTraining complete!')
+    print('Best model saved as: best_model_tensorflow.h5')
+    print('Final model saved as: final_model_tensorflow.h5')
+    
+    # Print training history
+    print('\nTraining History:')
+    for epoch in range(len(history.history['accuracy'])):
+        print(f"Epoch {epoch+1}: "
+              f"train_acc={history.history['accuracy'][epoch]:.4f}, "
+              f"val_acc={history.history['val_accuracy'][epoch]:.4f}")
+
+if __name__ == '__main__':
+    main()
